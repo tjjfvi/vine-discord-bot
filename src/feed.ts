@@ -40,7 +40,7 @@ if (config.githubWebhook.port != null) {
 function webhookMessage({ name, payload }: EmitterWebhookEvent): string[] | undefined {
   if (name === "issues") {
     if (payload.action === "opened") {
-      return [issue(payload.issue), quote(payload.issue.body)]
+      return [issue(payload.issue), quote(payload.issue.body, payload.issue.html_url)]
     }
     if (payload.action === "closed" || payload.action === "reopened") {
       return [issue(payload.issue)]
@@ -48,12 +48,19 @@ function webhookMessage({ name, payload }: EmitterWebhookEvent): string[] | unde
   }
   if (name === "issue_comment") {
     if (payload.action === "created") {
-      return [emojis.comment, issue(payload.issue), quote(payload.comment.body)]
+      return [
+        emojis.comment,
+        issue(payload.issue),
+        quote(payload.comment.body, payload.issue.html_url),
+      ]
     }
   }
   if (name === "pull_request") {
     if (payload.action === "opened") {
-      return [pullRequest(payload.pull_request), quote(payload.pull_request.body)]
+      return [
+        pullRequest(payload.pull_request),
+        quote(payload.pull_request.body, payload.pull_request.html_url),
+      ]
     }
     if (
       payload.action === "closed"
@@ -71,8 +78,8 @@ function webhookMessage({ name, payload }: EmitterWebhookEvent): string[] | unde
       }
       return [
         review(payload.review),
-        pullRequest(payload.pull_request),
-        quote(payload.review.body),
+        pullRequest(payload.pull_request, payload.review.html_url),
+        quote(payload.review.body, payload.review.html_url),
       ]
     }
   }
@@ -81,16 +88,17 @@ function webhookMessage({ name, payload }: EmitterWebhookEvent): string[] | unde
       return [
         emojis.review.comment,
         emojis.comment,
-        pullRequest(payload.pull_request),
-        quote(payload.comment.body),
+        pullRequest(payload.pull_request, payload.comment.html_url),
+        quote(payload.comment.body, payload.comment.html_url),
       ]
     }
   }
-  function quote(body: string | null): string {
+  function quote(body: string | null, link: string): string {
     if (!("repository" in payload)) throw new Error("no repository")
     if (!body || !body.trim()) return ""
     const repoName = payload.repository!.full_name
-    return "\n" + body
+    let content = "\n" + body
+      .trim()
       .replace(/\r\n/g, "\n")
       .replace(/(https?:\/\/[-a-zA-Z0-9@:%_\+.~#?&\/=]*)/g, "<$1>")
       .replace(
@@ -99,6 +107,13 @@ function webhookMessage({ name, payload }: EmitterWebhookEvent): string[] | unde
           `[${content}](<https://github.com/${repo ?? repoName}/issues/${id}>)`,
       )
       .replace(/^/gm, "> ")
+    if (content.length > 1600) {
+      while (content.length > 1600) {
+        content = content.slice(0, content.lastIndexOf("\n"))
+      }
+      content += `\n> [[** · · · **]](<${link}>)`
+    }
+    return content
   }
 }
 
@@ -114,7 +129,7 @@ function issue(issue: Issue): string {
   return `${emoji} [${issue.title} #${issue.number}](<${issue.html_url}>)`
 }
 
-function pullRequest(pr: PullRequest): string {
+function pullRequest(pr: PullRequest, link = pr.html_url): string {
   const emoji = pr.state === "open"
     ? pr.draft
       ? emojis.pr.draft
@@ -122,7 +137,7 @@ function pullRequest(pr: PullRequest): string {
     : pr.merged_at
     ? emojis.pr.merged
     : emojis.pr.closed
-  return `${emoji} [${pr.title} #${pr.number}](<${pr.html_url}>)`
+  return `${emoji} [${pr.title} #${pr.number}](<${link}>)`
 }
 
 function review(review: Review) {
